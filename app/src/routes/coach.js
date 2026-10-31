@@ -420,14 +420,36 @@ ${items.map((k) => `<form method="post" action="/coach/brain/${k.id}" class="car
 <p class="muted">Everything students ask and everything you teach, in one place. ${total} items. Levi AI uses verified answers first.</p>
 <div class="chips"><a href="/coach/brain" class="chip${topic ? '' : ' on'}">All</a>${counts.map((c) => `<a class="chip${c.topic === topic ? ' on' : ''}" href="/coach/brain?topic=${encodeURIComponent(c.topic)}">${esc(c.topic)} · ${c.n}</a>`).join('')}</div>
 <form class="askrow" method="get"><input name="q" value="${esc(term)}" placeholder="Search: shipping profile, pallets, TikTok approval…"><button class="btn small">Search</button></form>
+<details class="card"${ai.enabled() ? '' : ' hidden'}><summary><strong>+ Paste an Instagram Q&A, notes or a transcript</strong> (AI turns it into Q&As)</summary>
+<form method="post" action="/coach/brain/extract" class="stack"><p class="muted small">Paste your answers from an IG story Q&A, a voice-note transcript, a podcast — anything where you teach. AI pulls out every question + your answer.</p>
+<div class="askrow"><select name="source"><option value="instagram">Instagram Q&A</option><option value="video">Video / podcast</option><option value="manual">Notes</option></select><input name="ref" type="url" placeholder="Link (optional)"></div>
+<textarea name="text" rows="8" required placeholder="Q: How much inventory should I start with?&#10;A: Start with one pallet..."></textarea><button class="btn small">Extract Q&As</button></form></details>
 <details class="card"><summary><strong>+ Add your own Q&A</strong> (things you say a lot)</summary>
 <form method="post" action="/coach/brain" class="stack"><label>Question<input name="question" required></label><label>Your answer<textarea name="answer" rows="4" required></textarea></label>
 <select name="topic">${TOPICS.map((t) => `<option>${t}</option>`).join('')}</select><button class="btn small">Add</button></form></details>
-${items.map((k) => `<details class="card"><summary>${k.approved ? '✅' : '🤖'} <strong>${esc(k.question)}</strong> <span class="tag">${esc(k.topic || 'Untagged')}</span> <span class="muted small">${esc(k.source)} · ${date(k.created_at)}</span></summary>
+${items.map((k) => `<details class="card"><summary>${k.approved ? '✅' : '🤖'} <strong>${esc(k.question)}</strong> <span class="tag">${esc(k.topic || 'Untagged')}</span> <span class="muted small">${esc(k.source)} · ${date(k.created_at)}</span>${k.ref ? ` <a class="small" href="${esc(k.ref)}" target="_blank" rel="noopener">source ↗</a>` : ''}</summary>
 <form method="post" action="/coach/brain/${k.id}" class="stack"><textarea name="answer" rows="5">${esc(k.answer || '')}</textarea>
 <div class="askrow"><select name="topic"><option value="">Topic…</option>${TOPICS.map((t) => `<option${t === k.topic ? ' selected' : ''}>${t}</option>`).join('')}</select>
 <label class="check"><input type="checkbox" name="approved" value="1" ${k.approved ? 'checked' : ''}> Verified</label><input type="hidden" name="back" value="/coach/brain${term || topic ? `?q=${encodeURIComponent(term)}&topic=${encodeURIComponent(topic)}` : ''}"><button class="btn small">Save</button></div></form>
 <form method="post" action="/coach/brain/${k.id}/delete"><button class="link danger small">Delete</button></form></details>`).join('') || '<p class="muted">Nothing yet. Log calls and answer questions to fill it up.</p>'}`);
+  }));
+
+  r.post('/brain/extract', wrap(async (req, res) => {
+    if (!ai.enabled()) return res.redirect('/coach/brain');
+    const source = ['instagram', 'video', 'manual'].includes(req.body.source) ? req.body.source : 'manual';
+    const ref = /^https?:\/\//.test(req.body.ref || '') ? clip(req.body.ref, 300) : null;
+    try {
+      const out = await ai.analyzeCall({ studentName: null, kind: source === 'instagram' ? 'Instagram story Q&A' : 'content', notes: clip(req.body.text, 120000) });
+      let n = 0;
+      for (const k of (out.qa || []).slice(0, 60)) {
+        if (k?.question && k?.answer) { await q('INSERT INTO knowledge (source,question,answer,topic,approved,ref) VALUES ($1,$2,$3,$4,true,$5)', [source, clip(k.question, 1000), clip(k.answer, 6000), clip(k.topic, 40), ref]); n++; }
+      }
+      req.flash(`Added ${n} Q&As to the Brain.`);
+    } catch (e) {
+      console.error('extract AI', e.message);
+      req.flash('Couldn\'t extract right now — try again in a minute.', 'err');
+    }
+    res.redirect('/coach/brain');
   }));
 
   r.post('/brain', wrap(async (req, res) => {
@@ -527,6 +549,23 @@ ${w.story ? `<p>${esc(w.story)}</p>` : ''}${w.proof_url ? `<a href="${esc(w.proo
       }
       added++;
     }
+    let knowledgeAdded = 0;
+    for (const k of (Array.isArray(req.body?.knowledge) ? req.body.knowledge : []).slice(0, 1000)) {
+      if (!k?.question || !k?.answer) continue;
+      const dup = await one('SELECT id FROM knowledge WHERE lower(question)=lower($1) AND coalesce(ref,\'\')=coalesce($2,\'\')', [clip(k.question, 1000), k.ref || null]);
+      if (dup) continue;
+      await q('INSERT INTO knowledge (source,question,answer,topic,approved,ref) VALUES ($1,$2,$3,$4,true,$5)',
+        [clip(k.source || 'video', 20), clip(k.question, 1000), clip(k.answer, 6000), clip(k.topic, 40), /^https?:\/\//.test(k.ref || '') ? clip(k.ref, 300) : null]);
+      knowledgeAdded++;
+    }
+    let lessonsAdded = 0;
+    for (const l of (Array.isArray(req.body?.lessons) ? req.body.lessons : []).slice(0, 200)) {
+      if (!l?.title || !l?.url) continue;
+      const dup = await one('SELECT id FROM lessons WHERE url=$1', [clip(l.url, 500)]);
+      if (dup) continue;
+      await q('INSERT INTO lessons (stage,title,url,description,sort) VALUES ($1,$2,$3,$4,$5)', [clip(l.stage, 80), clip(l.title, 200), clip(l.url, 500), clip(l.description, 500), num(l.sort) || 0]);
+      lessonsAdded++;
+    }
     let purged = 0;
     if (req.body?.purgeTest) {
       const t = await all("SELECT id FROM students WHERE name LIKE 'TEST Student%'");
@@ -537,7 +576,7 @@ ${w.story ? `<p>${esc(w.story)}</p>` : ''}${w.proof_url ? `<a href="${esc(w.proo
         purged++;
       }
     }
-    res.json({ added, skipped, purged });
+    res.json({ added, skipped, purged, knowledgeAdded, lessonsAdded });
   }));
 
   // ---------- Content: lessons, resources, announcements ----------
