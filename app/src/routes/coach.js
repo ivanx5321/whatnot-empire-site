@@ -415,8 +415,10 @@ ${items.map((k) => `<form method="post" action="/coach/brain/${k.id}" class="car
     const items = await all(`SELECT * FROM knowledge ${where} ORDER BY approved DESC, created_at DESC LIMIT 100`, params);
     const counts = await all("SELECT coalesce(nullif(topic,''),'Untagged') topic, count(*)::int n FROM knowledge GROUP BY 1 ORDER BY 2 DESC");
     const total = counts.reduce((a, c) => a + c.n, 0);
+    const job = await one("SELECT * FROM jobs WHERE name='community'");
     res.page('Knowledge Brain', `
 <h1>Knowledge Brain</h1>
+${job && job.status !== 'done' ? `<div class="flash warn">Discord import: ${esc(job.status)} — ${esc(job.detail || '')} <span class="small">(${ago(job.updated_at)}; refresh to update)</span></div>` : job ? `<div class="flash">Discord import finished: ${esc(job.detail || '')}</div>` : ''}
 <p class="muted">Everything students ask and everything you teach, in one place. ${total} items. Levi AI uses verified answers first.</p>
 <div class="chips"><a href="/coach/brain" class="chip${topic ? '' : ' on'}">All</a>${counts.map((c) => `<a class="chip${c.topic === topic ? ' on' : ''}" href="/coach/brain?topic=${encodeURIComponent(c.topic)}">${esc(c.topic)} · ${c.n}</a>`).join('')}</div>
 <form class="askrow" method="get"><input name="q" value="${esc(term)}" placeholder="Search: shipping profile, pallets, TikTok approval…"><button class="btn small">Search</button></form>
@@ -528,6 +530,106 @@ ${w.story ? `<p>${esc(w.story)}</p>` : ''}${w.proof_url ? `<a href="${esc(w.proo
   r.post('/wins/:id/feature', wrap(async (req, res) => {
     await q('UPDATE wins SET featured = NOT featured WHERE id=$1', [req.params.id]);
     res.redirect('/coach/wins');
+  }));
+
+  // ---------- Community chat ingest (Discord) ----------
+  // A helper page opened from the Discord tab; Discord posts messages to it with postMessage,
+  // and it saves them here (same-origin, coach session). Then a background job turns them into Q&As.
+  r.get('/ingest', wrap(async (req, res) => {
+    const counts = await all("SELECT channel, count(*)::int n, count(*) FILTER (WHERE processed)::int done FROM raw_messages GROUP BY 1 ORDER BY 1");
+    const job = await one("SELECT * FROM jobs WHERE name='community'");
+    res.send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Import · Live Selling Coach</title><link rel="stylesheet" href="/static/style.css"></head><body><main>
+<h1>Community import</h1>
+<p id="st" class="muted">Waiting for messages from Discord…</p>
+<section class="card"><h2>Saved so far</h2><ul class="list">${counts.map((c) => `<li>#${esc(c.channel)} · ${c.n} messages · ${c.done} processed</li>`).join('') || '<li class="muted">Nothing yet.</li>'}</ul>
+${job ? `<p class="small muted">Processing: ${esc(job.status)} — ${esc(job.detail || '')} (${ago(job.updated_at)})</p>` : ''}
+<form method="post" action="/coach/ingest/process"><button class="btn small">Process into Q&As</button></form></section>
+<script>
+const st=document.getElementById('st');
+window.addEventListener('message', async (e) => {
+  if (e.origin !== 'https://discord.com' || !e.data || e.data.type !== 'lsc-ingest') return;
+  const msgs = e.data.messages || []; let saved = 0;
+  for (let i = 0; i < msgs.length; i += 400) {
+    const r = await fetch('/coach/ingest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: e.data.channel, messages: msgs.slice(i, i + 400) }) });
+    const j = await r.json(); saved += j.saved || 0;
+    st.textContent = 'Saving #' + e.data.channel + ': ' + Math.min(i + 400, msgs.length) + ' / ' + msgs.length;
+  }
+  st.textContent = 'Saved ' + saved + ' new messages from #' + e.data.channel + '.';
+  e.source.postMessage({ type: 'lsc-saved', channel: e.data.channel, saved, total: msgs.length }, e.origin);
+});
+if (window.opener) window.opener.postMessage({ type: 'lsc-ready' }, 'https://discord.com');
+</script></main></body></html>`);
+  }));
+
+  r.post('/ingest', express.json({ limit: '10mb' }), wrap(async (req, res) => {
+    const channel = clip(req.body?.channel, 80) || 'unknown';
+    let saved = 0;
+    for (const m of (Array.isArray(req.body?.messages) ? req.body.messages : []).slice(0, 2000)) {
+      if (!m?.id || !m.c) continue;
+      const r2 = await pool_insert(m, channel);
+      saved += r2;
+    }
+    res.json({ saved });
+  }));
+
+  async function pool_insert(m, channel) {
+    const r2 = await q(`INSERT INTO raw_messages (id,source,channel,sent_at,author,content,reply_to) VALUES ($1,'discord',$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
+      [clip(m.id, 80), channel, m.t || null, clip(m.u, 80), clip(m.c, 4000), clip(m.r, 300)]);
+    return r2.rowCount;
+  }
+
+  let running = false;
+  async function setJob(status, detail) {
+    await q("INSERT INTO jobs (name,status,detail,updated_at) VALUES ('community',$1,$2,now()) ON CONFLICT (name) DO UPDATE SET status=$1, detail=$2, updated_at=now()", [status, detail]);
+  }
+  async function processCommunity() {
+    if (running) return; running = true;
+    const coach = process.env.COACH_DISCORD_NAME || 'YOUNGCEOLEVI';
+    let windows = 0; let added = 0;
+    try {
+      for (;;) {
+        const next = await one('SELECT channel FROM raw_messages WHERE NOT processed ORDER BY channel, sent_at LIMIT 1');
+        if (!next) break;
+        const rows = await all('SELECT id, sent_at, author, content, reply_to FROM raw_messages WHERE NOT processed AND channel=$1 ORDER BY sent_at LIMIT 300', [next.channel]);
+        let text = ''; const ids = [];
+        for (const m of rows) {
+          const line = `[${String(m.sent_at ? new Date(m.sent_at).toISOString().slice(0, 10) : '')}] ${m.author}: ${m.reply_to ? `(↪ ${m.reply_to.slice(0, 120)}) ` : ''}${m.content}\n`;
+          if (text.length + line.length > 40000 && ids.length) break;
+          text += line; ids.push(m.id);
+        }
+        await setJob('running', `#${next.channel}: window ${windows + 1}, ${added} Q&As added so far`);
+        try {
+          const out = await ai.extractCommunity({ channel: next.channel, transcript: text, coachName: coach });
+          for (const k of (out.qa || []).slice(0, 60)) {
+            if (!k?.question || !k?.answer) continue;
+            const dup = await one('SELECT id FROM knowledge WHERE lower(question)=lower($1)', [clip(k.question, 1000)]);
+            if (dup) continue;
+            await q("INSERT INTO knowledge (source,question,answer,topic,approved) VALUES ('discord',$1,$2,$3,$4)", [clip(k.question, 1000), clip(k.answer, 6000), clip(k.topic, 40), k.by_coach === true]);
+            added++;
+          }
+        } catch (e) {
+          console.error('community AI', e.message);
+          await setJob('retrying', `AI error on #${next.channel}: ${e.message.slice(0, 120)}`);
+          await new Promise((r3) => setTimeout(r3, 20000));
+          continue;
+        }
+        await q('UPDATE raw_messages SET processed=true WHERE id = ANY($1)', [ids]);
+        windows++;
+      }
+      // Raw chat isn't kept once it's been turned into Q&As.
+      await q('UPDATE raw_messages SET content=NULL, author=NULL, reply_to=NULL WHERE processed');
+      await setJob('done', `${windows} chunks processed, ${added} new Q&As added`);
+    } catch (e) {
+      console.error('community job', e);
+      await setJob('error', e.message.slice(0, 200));
+    } finally { running = false; }
+  }
+
+  r.post('/ingest/process', wrap(async (req, res) => {
+    if (!ai.enabled()) { req.flash('Turn on AI first.', 'err'); return res.redirect('/coach/ingest'); }
+    processCommunity();
+    req.flash('Processing started. This page shows progress — refresh any time.');
+    res.redirect('/coach/brain');
   }));
 
   // ---------- One-time bulk import (JSON) ----------

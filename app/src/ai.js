@@ -128,6 +128,25 @@ Return ONLY JSON:
   return parseJson(text) || { summary: text, action_items: [], qa: [], student_wins: [], concerns: [] };
 }
 
+async function extractCommunity({ channel, transcript, coachName }) {
+  const system = `You turn a live-selling (Whatnot / TikTok Live) community chat log into a coaching knowledge base. The community belongs to coach ${coachName}. Only use what is in the log.`;
+  const prompt = `Channel: #${channel}. Chat log in time order. Format: [date] author: message  (↪ = replying to).
+"""
+${transcript}
+"""
+
+Find every real question a seller asked that got a useful answer in the log (including later replies). For each, write a general standalone Q&A a future student could learn from.
+Rules:
+- Rewrite the question generally (no names, no @mentions, no personal details).
+- The answer combines the useful replies: concrete steps, numbers, tools, settings. 2-6 sentences. No names.
+- by_coach = true only if ${coachName}'s own messages supplied the core of the answer.
+- Skip: unanswered questions, jokes, hype, personal chit-chat, self-promo, anything unsafe or that's just someone's opinion with no reasoning.
+- topic: one of Getting Started, Shipping, Inventory, Running Shows, Getting Viewers, TikTok, Whatnot, Hiring & Team, Money & Profit, Mindset, Tools, Other
+Return ONLY JSON: {"qa":[{"question":"...","answer":"...","topic":"...","by_coach":true}]}  (use {"qa":[]} if nothing qualifies)`;
+  const text = await claude({ system, messages: [{ role: 'user', content: prompt }], maxTokens: 4000, timeoutMs: 180000 });
+  return parseJson(text) || { qa: [] };
+}
+
 async function suggestTopic(question) {
   const text = await claude({
     system: 'Classify a live-selling coaching question into ONE topic. Reply with only the topic name.',
@@ -153,4 +172,4 @@ End with "## Gaps to record" — questions that came up but have no good answer 
   return claude({ system, messages: [{ role: 'user', content: prompt }], maxTokens: 6000, timeoutMs: 180000 });
 }
 
-module.exports = { enabled, askLevi, checkinFeedback, reviewShow, analyzeCall, suggestTopic, buildCourse, studentContext, searchKnowledge };
+module.exports = { enabled, extractCommunity, askLevi, checkinFeedback, reviewShow, analyzeCall, suggestTopic, buildCourse, studentContext, searchKnowledge };

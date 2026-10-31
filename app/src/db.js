@@ -197,6 +197,26 @@ CREATE TABLE IF NOT EXISTS course_drafts (
 
 ALTER TABLE knowledge ADD COLUMN IF NOT EXISTS ref TEXT;
 
+CREATE TABLE IF NOT EXISTS raw_messages (
+  id TEXT PRIMARY KEY,
+  source TEXT NOT NULL,
+  channel TEXT,
+  sent_at TIMESTAMPTZ,
+  author TEXT,
+  content TEXT,
+  reply_to TEXT,
+  processed BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS raw_messages_todo ON raw_messages(processed, channel, sent_at);
+
+CREATE TABLE IF NOT EXISTS jobs (
+  name TEXT PRIMARY KEY,
+  status TEXT,
+  detail TEXT,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS knowledge_fts ON knowledge
   USING GIN (to_tsvector('english', coalesce(question,'') || ' ' || coalesce(answer,'') || ' ' || coalesce(topic,'')));
 CREATE INDEX IF NOT EXISTS checkins_student ON checkins(student_id, week_of DESC);
