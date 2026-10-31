@@ -21,7 +21,7 @@ p{margin:6px 0}
 .card.current{border-color:var(--accent);box-shadow:0 0 0 2px var(--soft)}
 .card.cta{display:flex;flex-direction:column;gap:2px;text-decoration:none;background:var(--soft);border-color:var(--accent)}
 .auth{max-width:420px;margin:40px auto}
-.grid2,.grid3,.grid4{display:grid;gap:12px}
+.grid2,.grid3,.grid4{display:grid;gap:12px;margin:12px 0}
 .grid2{grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
 .grid3{grid-template-columns:repeat(auto-fit,minmax(180px,1fr))}
 .grid4{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}

@@ -508,6 +508,38 @@ ${w.story ? `<p>${esc(w.story)}</p>` : ''}${w.proof_url ? `<a href="${esc(w.proo
     res.redirect('/coach/wins');
   }));
 
+  // ---------- One-time bulk import (JSON) ----------
+  // Skips anyone whose name already exists, so it's safe to run twice.
+  r.post('/import', express.json({ limit: '2mb' }), wrap(async (req, res) => {
+    const list = Array.isArray(req.body?.students) ? req.body.students : [];
+    let added = 0; let skipped = 0;
+    for (const s of list.slice(0, 500)) {
+      if (!s || !s.name) continue;
+      const exists = await one('SELECT id FROM students WHERE lower(name)=lower($1)', [clip(s.name, 120)]);
+      if (exists) { skipped++; continue; }
+      const st = await one(`INSERT INTO students (name,email,phone,ig_handle,tiktok_handle,program,price,start_date,end_date,status,goal,starting_point,coach_notes,invite_token)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+      [clip(s.name, 120), s.email ? clip(s.email, 200).toLowerCase() : null, clip(s.phone, 40), clip(s.ig_handle, 80), clip(s.tiktok_handle, 80), clip(s.program, 80), num(s.price) || 0,
+        s.start_date || null, s.end_date || null, ['active', 'paused', 'completed', 'renewed', 'refunded', 'archived'].includes(s.status) ? s.status : 'active',
+        clip(s.goal, 300), clip(s.starting_point, 300), clip(s.coach_notes, 10000), newToken()]);
+      for (const p of (s.payments || []).slice(0, 50)) {
+        if (num(p.amount)) await q('INSERT INTO payments (student_id,amount,method,paid_on,note) VALUES ($1,$2,$3,$4,$5)', [st.id, num(p.amount), clip(p.method, 30), p.paid_on || null, clip(p.note, 300)]);
+      }
+      added++;
+    }
+    let purged = 0;
+    if (req.body?.purgeTest) {
+      const t = await all("SELECT id FROM students WHERE name LIKE 'TEST Student%'");
+      for (const x of t) {
+        await q("DELETE FROM knowledge WHERE source='call' AND source_id IN (SELECT id FROM calls WHERE student_id=$1)", [x.id]);
+        await q('DELETE FROM calls WHERE student_id=$1', [x.id]);
+        await q('DELETE FROM students WHERE id=$1', [x.id]);
+        purged++;
+      }
+    }
+    res.json({ added, skipped, purged });
+  }));
+
   // ---------- Content: lessons, resources, announcements ----------
   r.get('/content', wrap(async (req, res) => {
     const lessons = await all('SELECT * FROM lessons ORDER BY stage, sort, id');
