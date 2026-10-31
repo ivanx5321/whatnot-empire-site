@@ -135,7 +135,7 @@ async function extractCommunity({ channel, transcript, coachName }) {
 ${transcript}
 """
 
-Find every real question a seller asked that got a useful answer in the log (including later replies). For each, write a general standalone Q&A a future student could learn from.
+Find every real question a seller asked that got a useful answer in the log (including later replies), AND every useful tip, rule of thumb, number, supplier/tool recommendation or lesson someone shared even if nobody asked (write those as the question a seller would ask). Be thorough — a busy chunk can easily have 5-15. For each, write a general standalone Q&A a future student could learn from.
 Rules:
 - Rewrite the question generally (no names, no @mentions, no personal details).
 - The answer combines the useful replies: concrete steps, numbers, tools, settings. 2-6 sentences. No names.

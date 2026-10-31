@@ -550,7 +550,7 @@ window.addEventListener('message', async (e) => {
   if (e.origin !== 'https://discord.com' || !e.data || e.data.type !== 'lsc-ingest') return;
   const msgs = e.data.messages || []; let saved = 0;
   for (let i = 0; i < msgs.length; i += 400) {
-    const r = await fetch('/coach/ingest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: e.data.channel, messages: msgs.slice(i, i + 400) }) });
+    const r = await fetch('/coach/ingest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: e.data.channel, reprocess: e.data.reprocess === true, messages: msgs.slice(i, i + 400) }) });
     const j = await r.json(); saved += j.saved || 0;
     st.textContent = 'Saving #' + e.data.channel + ': ' + Math.min(i + 400, msgs.length) + ' / ' + msgs.length;
   }
@@ -566,15 +566,17 @@ if (window.opener) window.opener.postMessage({ type: 'lsc-ready' }, 'https://dis
     let saved = 0;
     for (const m of (Array.isArray(req.body?.messages) ? req.body.messages : []).slice(0, 2000)) {
       if (!m?.id || !m.c) continue;
-      const r2 = await pool_insert(m, channel);
+      const r2 = await pool_insert(m, channel, req.body?.reprocess === true);
       saved += r2;
     }
     res.json({ saved });
   }));
 
-  async function pool_insert(m, channel) {
-    const r2 = await q(`INSERT INTO raw_messages (id,source,channel,sent_at,author,content,reply_to) VALUES ($1,'discord',$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
-      [clip(m.id, 80), channel, m.t || null, clip(m.u, 80), clip(m.c, 4000), clip(m.r, 300)]);
+  async function pool_insert(m, channel, reprocess) {
+    const r2 = await q(`INSERT INTO raw_messages (id,source,channel,sent_at,author,content,reply_to) VALUES ($1,'discord',$2,$3,$4,$5,$6)
+      ON CONFLICT (id) DO UPDATE SET content=EXCLUDED.content, author=EXCLUDED.author, reply_to=EXCLUDED.reply_to, processed=false
+      WHERE raw_messages.content IS NULL AND $7::boolean`,
+      [clip(m.id, 80), channel, m.t || null, clip(m.u, 80), clip(m.c, 4000), clip(m.r, 300), reprocess === true]);
     return r2.rowCount;
   }
 
@@ -590,11 +592,11 @@ if (window.opener) window.opener.postMessage({ type: 'lsc-ready' }, 'https://dis
       for (;;) {
         const next = await one('SELECT channel FROM raw_messages WHERE NOT processed ORDER BY channel, sent_at LIMIT 1');
         if (!next) break;
-        const rows = await all('SELECT id, sent_at, author, content, reply_to FROM raw_messages WHERE NOT processed AND channel=$1 ORDER BY sent_at LIMIT 300', [next.channel]);
+        const rows = await all('SELECT id, sent_at, author, content, reply_to FROM raw_messages WHERE NOT processed AND channel=$1 ORDER BY sent_at LIMIT 120', [next.channel]);
         let text = ''; const ids = [];
         for (const m of rows) {
           const line = `[${String(m.sent_at ? new Date(m.sent_at).toISOString().slice(0, 10) : '')}] ${m.author}: ${m.reply_to ? `(↪ ${m.reply_to.slice(0, 120)}) ` : ''}${m.content}\n`;
-          if (text.length + line.length > 40000 && ids.length) break;
+          if (text.length + line.length > 16000 && ids.length) break;
           text += line; ids.push(m.id);
         }
         await setJob('running', `#${next.channel}: window ${windows + 1}, ${added} Q&As added so far`);
