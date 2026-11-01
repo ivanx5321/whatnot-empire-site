@@ -658,8 +658,8 @@ if (window.opener) window.opener.postMessage({ type: 'lsc-ready' }, 'https://dis
       if (!k?.question || !k?.answer) continue;
       const dup = await one('SELECT id FROM knowledge WHERE lower(question)=lower($1) AND coalesce(ref,\'\')=coalesce($2,\'\')', [clip(k.question, 1000), k.ref || null]);
       if (dup) continue;
-      await q('INSERT INTO knowledge (source,question,answer,topic,approved,ref) VALUES ($1,$2,$3,$4,true,$5)',
-        [clip(k.source || 'video', 20), clip(k.question, 1000), clip(k.answer, 6000), clip(k.topic, 40), /^https?:\/\//.test(k.ref || '') ? clip(k.ref, 300) : null]);
+      await q('INSERT INTO knowledge (source,question,answer,topic,approved,ref) VALUES ($1,$2,$3,$4,$6,$5)',
+        [clip(k.source || 'video', 20), clip(k.question, 1000), clip(k.answer, 6000), clip(k.topic, 40), /^https?:\/\//.test(k.ref || '') ? clip(k.ref, 300) : null, k.approved !== false]);
       knowledgeAdded++;
     }
     let lessonsAdded = 0;
