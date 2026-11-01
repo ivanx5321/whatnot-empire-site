@@ -670,6 +670,16 @@ if (window.opener) window.opener.postMessage({ type: 'lsc-ready' }, 'https://dis
       await q('INSERT INTO lessons (stage,title,url,description,sort) VALUES ($1,$2,$3,$4,$5)', [clip(l.stage, 80), clip(l.title, 200), clip(l.url, 500), clip(l.description, 500), num(l.sort) || 0]);
       lessonsAdded++;
     }
+    let winsAdded = 0;
+    for (const w of (Array.isArray(req.body?.wins) ? req.body.wins : []).slice(0, 200)) {
+      if (!w?.student_name || !w?.win) continue;
+      const st = await one('SELECT id FROM students WHERE lower(name)=lower($1)', [clip(w.student_name, 120)]);
+      if (!st) continue;
+      const dup = await one('SELECT id FROM wins WHERE student_id=$1 AND title=$2', [st.id, clip(w.win, 200)]);
+      if (dup) continue;
+      await q('INSERT INTO wins (student_id,title,story,ok_to_share,created_at) VALUES ($1,$2,$3,false,$4)', [st.id, clip(w.win, 200), 'From your texts with this student', w.date || new Date()]);
+      winsAdded++;
+    }
     let purged = 0;
     if (req.body?.purgeTest) {
       const t = await all("SELECT id FROM students WHERE name LIKE 'TEST Student%'");
@@ -680,7 +690,7 @@ if (window.opener) window.opener.postMessage({ type: 'lsc-ready' }, 'https://dis
         purged++;
       }
     }
-    res.json({ added, skipped, purged, knowledgeAdded, lessonsAdded });
+    res.json({ added, skipped, purged, knowledgeAdded, lessonsAdded, winsAdded });
   }));
 
   // ---------- Content: lessons, resources, announcements ----------
