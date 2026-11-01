@@ -547,7 +547,7 @@ ${job ? `<p class="small muted">Processing: ${esc(job.status)} — ${esc(job.det
 <script>
 const st=document.getElementById('st');
 window.addEventListener('message', async (e) => {
-  if (e.origin !== 'https://discord.com' || !e.data || e.data.type !== 'lsc-ingest') return;
+  if (!['https://discord.com','https://app.manychat.com'].includes(e.origin) || !e.data || e.data.type !== 'lsc-ingest') return;
   const msgs = e.data.messages || []; let saved = 0;
   for (let i = 0; i < msgs.length; i += 400) {
     const r = await fetch('/coach/ingest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: e.data.channel, reprocess: e.data.reprocess === true, messages: msgs.slice(i, i + 400) }) });
@@ -557,7 +557,7 @@ window.addEventListener('message', async (e) => {
   st.textContent = 'Saved ' + saved + ' new messages from #' + e.data.channel + '.';
   e.source.postMessage({ type: 'lsc-saved', channel: e.data.channel, saved, total: msgs.length }, e.origin);
 });
-if (window.opener) window.opener.postMessage({ type: 'lsc-ready' }, 'https://discord.com');
+if (window.opener) ['https://discord.com','https://app.manychat.com'].forEach((o) => { try { window.opener.postMessage({ type: 'lsc-ready' }, o); } catch (e) {} });
 </script></main></body></html>`);
   }));
 
@@ -606,7 +606,7 @@ if (window.opener) window.opener.postMessage({ type: 'lsc-ready' }, 'https://dis
             if (!k?.question || !k?.answer) continue;
             const dup = await one('SELECT id FROM knowledge WHERE lower(question)=lower($1)', [clip(k.question, 1000)]);
             if (dup) continue;
-            await q("INSERT INTO knowledge (source,question,answer,topic,approved) VALUES ('discord',$1,$2,$3,$4)", [clip(k.question, 1000), clip(k.answer, 6000), clip(k.topic, 40), k.by_coach === true]);
+            await q('INSERT INTO knowledge (source,question,answer,topic,approved) VALUES ($5,$1,$2,$3,$4)', [clip(k.question, 1000), clip(k.answer, 6000), clip(k.topic, 40), k.by_coach === true, next.channel.startsWith('instagram') ? 'instagram' : 'discord']);
             added++;
           }
         } catch (e) {
