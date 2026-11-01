@@ -56,7 +56,7 @@ const STUDENT_NAV = [
 ];
 const COACH_NAV = [
   ['/coach', 'Dashboard'], ['/coach/students', 'Students'], ['/coach/calls', 'Calls'], ['/coach/questions', 'Questions'],
-  ['/coach/dm', 'DM Replies'], ['/coach/brain', 'Knowledge Brain'], ['/coach/course', 'Course Builder'], ['/coach/wins', 'Wins'],
+  ['/coach/leads', 'Leads'], ['/coach/dm', 'DM Replies'], ['/coach/brain', 'Knowledge Brain'], ['/coach/course', 'Course Builder'], ['/coach/wins', 'Wins'],
   ['/coach/content', 'Content'],
 ];
 

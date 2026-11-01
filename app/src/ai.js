@@ -171,6 +171,24 @@ Return ONLY JSON:
   return parseJson(text) || { lead: 'curious', why: '', bubbles: [text], next: '' };
 }
 
+async function classifyLeads(convos) {
+  const system = `You sort Instagram DM conversations for Levi Salas, who sells 1-on-1 live selling coaching (Whatnot + TikTok Live, about $5k for 3-5 months). "Levi" lines are his replies.`;
+  const body = convos.map((c, i) => `### ${i} @${c.handle}\n${c.convo}`).join('\n\n');
+  const prompt = `${body}
+
+For EACH conversation return one item. level:
+- "hot": clearly wants coaching/mentorship, asked price, ready to pay or book, or already in a sales conversation
+- "warm": aspiring or current live seller asking for help/advice who could become a client
+- "student": already a paying student / onboarding
+- "other": friends, suppliers, vendors, buyers, collabs, people pitching Levi services, spam, scams
+summary: one short line (no more than 20 words) of who they are and what they want.
+ask: their key question or request, short.
+next: the single best next move for Levi (e.g. "send booking link", "answer then send free course", "ignore").
+Return ONLY JSON: {"items":[{"i":0,"level":"...","summary":"...","ask":"...","next":"..."}]}`;
+  const text = await claude({ system, messages: [{ role: 'user', content: prompt }], maxTokens: 3500, timeoutMs: 180000 });
+  return (parseJson(text) || { items: [] }).items || [];
+}
+
 async function suggestTopic(question) {
   const text = await claude({
     system: 'Classify a live-selling coaching question into ONE topic. Reply with only the topic name.',
@@ -196,4 +214,4 @@ End with "## Gaps to record" — questions that came up but have no good answer 
   return claude({ system, messages: [{ role: 'user', content: prompt }], maxTokens: 6000, timeoutMs: 180000 });
 }
 
-module.exports = { enabled, draftDM, extractCommunity, askLevi, checkinFeedback, reviewShow, analyzeCall, suggestTopic, buildCourse, studentContext, searchKnowledge };
+module.exports = { enabled, draftDM, classifyLeads, extractCommunity, askLevi, checkinFeedback, reviewShow, analyzeCall, suggestTopic, buildCourse, studentContext, searchKnowledge };

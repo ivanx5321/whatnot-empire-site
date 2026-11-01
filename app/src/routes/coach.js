@@ -547,7 +547,17 @@ ${job ? `<p class="small muted">Processing: ${esc(job.status)} — ${esc(job.det
 <script>
 const st=document.getElementById('st');
 window.addEventListener('message', async (e) => {
-  if (!['https://discord.com','https://app.manychat.com'].includes(e.origin) || !e.data || e.data.type !== 'lsc-ingest') return;
+  if (!['https://discord.com','https://app.manychat.com'].includes(e.origin) || !e.data) return;
+  if (e.data.type === 'lsc-leads') {
+    const cv = e.data.convos || []; let imported = 0;
+    for (let i = 0; i < cv.length; i += 300) {
+      const r = await fetch('/coach/leads/import', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ convos: cv.slice(i, i + 300) }) });
+      const j = await r.json(); imported += j.imported || 0; st.textContent = 'Saving leads: ' + Math.min(i + 300, cv.length) + ' / ' + cv.length;
+    }
+    st.textContent = 'Saved ' + imported + ' conversations for lead sorting.';
+    e.source.postMessage({ type: 'lsc-leads-saved', imported }, e.origin); return;
+  }
+  if (e.data.type !== 'lsc-ingest') return;
   const msgs = e.data.messages || []; let saved = 0;
   for (let i = 0; i < msgs.length; i += 400) {
     const r = await fetch('/coach/ingest', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ channel: e.data.channel, reprocess: e.data.reprocess === true, messages: msgs.slice(i, i + 400) }) });
@@ -755,6 +765,59 @@ ${result.next ? `<p class="small"><strong>Next:</strong> ${esc(result.next)}</p>
     catch (e) { result = { lead: '', why: 'Could not draft: ' + e.message, bubbles: [] }; }
     if (result.bubbles?.length) await q('INSERT INTO dm_drafts (handle,message,lead,reply) VALUES ($1,$2,$3,$4)', [form.handle || null, form.message, clip(result.lead, 20), clip(result.bubbles.join('\n'), 3000)]);
     return dmPage(req, res, result, { ...form, message: '' , context: '' });
+  }));
+
+  // Instagram DM leads: imported from ManyChat, sorted by AI.
+  const LVL = { hot: '🔥 Hot', warm: 'Warm', student: 'Student', other: 'Other' };
+  let leadsRunning = false;
+  async function classifyAllLeads() {
+    if (leadsRunning) return; leadsRunning = true;
+    try {
+      for (;;) {
+        const batch = await all('SELECT handle, convo FROM dm_leads WHERE NOT classified ORDER BY last_at DESC LIMIT 12');
+        if (!batch.length) break;
+        let items = [];
+        try { items = await ai.classifyLeads(batch); } catch (e) { console.error('leads AI', e.message); await new Promise((r3) => setTimeout(r3, 15000)); continue; }
+        for (let i = 0; i < batch.length; i++) {
+          const it = items.find((x) => Number(x.i) === i) || {};
+          await q('UPDATE dm_leads SET level=$1, summary=$2, ask=$3, next_step=$4, classified=true, updated_at=now() WHERE handle=$5',
+            [['hot', 'warm', 'student', 'other'].includes(it.level) ? it.level : 'other', clip(it.summary, 300), clip(it.ask, 300), clip(it.next, 200), batch[i].handle]);
+        }
+      }
+    } finally { leadsRunning = false; }
+  }
+  r.post('/leads/import', express.json({ limit: '15mb' }), wrap(async (req, res) => {
+    let n = 0;
+    for (const c of (Array.isArray(req.body?.convos) ? req.body.convos : []).slice(0, 3000)) {
+      if (!c?.handle || !c.convo) continue;
+      await q(`INSERT INTO dm_leads (handle,name,last_at,convo,replied) VALUES ($1,$2,$3,$4,$5)
+        ON CONFLICT (handle) DO UPDATE SET name=EXCLUDED.name, last_at=EXCLUDED.last_at, replied=EXCLUDED.replied,
+          classified = CASE WHEN dm_leads.convo IS DISTINCT FROM EXCLUDED.convo THEN false ELSE dm_leads.classified END, convo=EXCLUDED.convo`,
+        [clip(c.handle, 80), clip(c.name, 120), c.last_at || null, clip(c.convo, 6000), c.replied === true]);
+      n++;
+    }
+    if (ai.enabled()) classifyAllLeads();
+    res.json({ imported: n });
+  }));
+  r.post('/leads/:handle/status', wrap(async (req, res) => {
+    await q('UPDATE dm_leads SET status=$1 WHERE handle=$2', [['open', 'contacted', 'booked', 'closed', 'ignore'].includes(req.body.status) ? req.body.status : 'open', req.params.handle]);
+    res.redirect('/coach/leads' + (req.body.back ? `?level=${encodeURIComponent(req.body.back)}` : ''));
+  }));
+  r.get('/leads', wrap(async (req, res) => {
+    const level = ['hot', 'warm', 'student', 'other'].includes(req.query.level) ? req.query.level : 'hot';
+    const counts = await all("SELECT coalesce(level,'pending') level, count(*)::int n, count(*) FILTER (WHERE NOT coalesce(replied,false) AND status='open')::int open FROM dm_leads GROUP BY 1");
+    const c = Object.fromEntries(counts.map((x) => [x.level, x]));
+    const rows = await all("SELECT * FROM dm_leads WHERE level=$1 AND status <> 'ignore' ORDER BY (status='open') DESC, coalesce(replied,false), last_at DESC LIMIT 300", [level]);
+    const pending = c.pending?.n || 0;
+    res.page('Leads', `
+<h1>Instagram leads</h1>
+<p class="muted">Every DM conversation from your inbox, sorted by AI. "Not replied" means they messaged after your last reply. Use <a href="/coach/dm">DM Replies</a> to draft answers.</p>
+${pending ? `<div class="card">Still sorting ${pending} conversations… refresh in a minute.</div>` : ''}
+<p>${['hot', 'warm', 'student', 'other'].map((l) => `<a class="tag${l === level ? ' active' : ''}" href="/coach/leads?level=${l}">${LVL[l]} · ${c[l]?.n || 0}${c[l]?.open ? ` (${c[l].open} not replied)` : ''}</a>`).join(' ')}</p>
+${rows.map((r) => `<section class="card"><div class="row"><strong><a href="https://instagram.com/${encodeURIComponent(r.handle)}" target="_blank" rel="noopener">@${esc(r.handle)}</a></strong> ${r.name && r.name !== r.handle ? `<span class="muted small">${esc(r.name)}</span>` : ''} <span class="muted small">${date(r.last_at)}</span> ${r.replied ? '<span class="tag">replied</span>' : '<span class="tag">not replied</span>'} <span class="tag">${esc(r.status)}</span></div>
+<p>${esc(r.summary || '')}</p>${r.ask ? `<p class="small"><strong>Asked:</strong> ${esc(r.ask)}</p>` : ''}${r.next_step ? `<p class="small"><strong>Next:</strong> ${esc(r.next_step)}</p>` : ''}
+<details class="small"><summary>Conversation</summary><pre style="white-space:pre-wrap">${esc(r.convo || '')}</pre></details>
+<form method="post" action="/coach/leads/${encodeURIComponent(r.handle)}/status" class="inline"><input type="hidden" name="back" value="${level}">${['contacted', 'booked', 'closed', 'ignore'].map((s2) => `<button class="btn small ghost" name="status" value="${s2}">${s2}</button>`).join(' ')}</form></section>`).join('') || '<p class="muted">None here.</p>'}`);
   }));
 
   return r;

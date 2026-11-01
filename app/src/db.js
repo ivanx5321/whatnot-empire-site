@@ -226,6 +226,21 @@ CREATE TABLE IF NOT EXISTS dm_drafts (
   created_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS dm_leads (
+  handle TEXT PRIMARY KEY,
+  name TEXT,
+  last_at TIMESTAMPTZ,
+  convo TEXT,
+  level TEXT,
+  summary TEXT,
+  ask TEXT,
+  next_step TEXT,
+  replied BOOLEAN,
+  status TEXT DEFAULT 'open',
+  classified BOOLEAN DEFAULT false,
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS knowledge_fts ON knowledge
   USING GIN (to_tsvector('english', coalesce(question,'') || ' ' || coalesce(answer,'') || ' ' || coalesce(topic,'')));
 CREATE INDEX IF NOT EXISTS checkins_student ON checkins(student_id, week_of DESC);
