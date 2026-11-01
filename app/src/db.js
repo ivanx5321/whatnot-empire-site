@@ -217,6 +217,15 @@ CREATE TABLE IF NOT EXISTS jobs (
   updated_at TIMESTAMPTZ DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS dm_drafts (
+  id SERIAL PRIMARY KEY,
+  handle TEXT,
+  message TEXT,
+  lead TEXT,
+  reply TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS knowledge_fts ON knowledge
   USING GIN (to_tsvector('english', coalesce(question,'') || ' ' || coalesce(answer,'') || ' ' || coalesce(topic,'')));
 CREATE INDEX IF NOT EXISTS checkins_student ON checkins(student_id, week_of DESC);

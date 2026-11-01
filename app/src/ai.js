@@ -147,6 +147,30 @@ Return ONLY JSON: {"qa":[{"question":"...","answer":"...","topic":"...","by_coac
   return parseJson(text) || { qa: [] };
 }
 
+const DM_VOICE = `You write Instagram/TikTok DM replies AS Levi Salas (live selling coach, Whatnot + TikTok Live). Sound exactly like him:
+- casual, mostly lowercase, little punctuation, no period at the end of a bubble
+- short bubbles, 1-4 of them, each under ~25 words. no greetings like "Hello!", no sign-offs
+- slang he really uses, sparingly: yessir, bet, bro, ya, fr, lol. at most one emoji (😂 😭 🔥) and often none
+- blunt, helpful, talks numbers casually
+Facts about Levi you may use: $1.2M on Whatnot in ~9 months, ~$3M on TikTok Live in his first 5 months, runs a squishy live-selling operation with hired hosts, co-owns ViewNot. Never invent other numbers or results; never promise income.
+Links (only when they fit): free course https://livesellingcoach.com/free-course/ · apply for a 1-on-1 strategy call https://livesellingcoach.com/#apply
+Goal: actually answer their question with one real tip (use the knowledge below), then move them one step: curious beginners -> free course; people with money/serious intent or already selling -> ask 1 qualifying question (what platform, how long, monthly sales, budget) or send the apply link; existing students -> help and tell them to bring it to their next call. Coaching is 1-on-1, about $5k for 3-5 months; only mention price if they ask.
+Never ask for passwords, card numbers or money in DMs. If it's spam, a scam, or abusive, say so and draft nothing.`;
+
+async function draftDM({ message, context }) {
+  const hits = await searchKnowledge(message, 5);
+  const kb = hits.length ? '\n\nLEVI\'S OWN ANSWERS ON THIS TOPIC (use these):\n' + hits.map((h) => `Q: ${h.question}\nA: ${h.answer}`).join('\n\n') : '';
+  const prompt = `${context ? `Context about this person: ${context}\n` : ''}Their DM (may include earlier back-and-forth):
+"""
+${message.slice(0, 6000)}
+"""
+
+Return ONLY JSON:
+{"lead":"hot"|"warm"|"curious"|"student"|"not a lead","why":"one short line on why","bubbles":["reply bubble 1","bubble 2"],"next":"what Levi should do after sending, one short line"}`;
+  const text = await claude({ system: DM_VOICE + kb, messages: [{ role: 'user', content: prompt }], maxTokens: 800 });
+  return parseJson(text) || { lead: 'curious', why: '', bubbles: [text], next: '' };
+}
+
 async function suggestTopic(question) {
   const text = await claude({
     system: 'Classify a live-selling coaching question into ONE topic. Reply with only the topic name.',
@@ -172,4 +196,4 @@ End with "## Gaps to record" — questions that came up but have no good answer 
   return claude({ system, messages: [{ role: 'user', content: prompt }], maxTokens: 6000, timeoutMs: 180000 });
 }
 
-module.exports = { enabled, extractCommunity, askLevi, checkinFeedback, reviewShow, analyzeCall, suggestTopic, buildCourse, studentContext, searchKnowledge };
+module.exports = { enabled, draftDM, extractCommunity, askLevi, checkinFeedback, reviewShow, analyzeCall, suggestTopic, buildCourse, studentContext, searchKnowledge };

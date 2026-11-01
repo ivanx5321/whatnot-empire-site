@@ -724,5 +724,38 @@ ${anns.map((a) => `<div class="row-item"><strong>${esc(a.title)}</strong> <span 
   r.post('/resources', wrap(async (req, res) => { await q('INSERT INTO resources (category,title,url,description) VALUES ($1,$2,$3,$4)', [clip(req.body.category, 80), clip(req.body.title, 200), safeUrl(req.body.url), clip(req.body.description, 500)]); res.redirect('/coach/content'); }));
   r.post('/resources/:id/delete', wrap(async (req, res) => { await q('DELETE FROM resources WHERE id=$1', [req.params.id]); res.redirect('/coach/content'); }));
 
+  // DM reply drafter: paste a DM, get a reply in Levi's voice + lead tag. Levi sends it himself.
+  const LEAD_TAG = { hot: '🔥 Hot lead', warm: 'Warm lead', curious: 'Curious', student: 'Student', 'not a lead': 'Not a lead' };
+  async function dmPage(req, res, result, form = {}) {
+    const recent = await all('SELECT * FROM dm_drafts ORDER BY created_at DESC LIMIT 25');
+    const counts = await all("SELECT lead, count(*)::int n FROM dm_drafts WHERE created_at > now() - interval '30 days' GROUP BY 1 ORDER BY 2 DESC");
+    res.page('DM Replies', `
+<h1>DM Replies</h1>
+<p class="muted">Paste a DM (or the whole back-and-forth). You get a reply in your voice using your Knowledge Brain, plus how hot the lead is. Copy it and send it yourself.</p>
+${ai.enabled() ? '' : '<div class="card warn">AI isn\'t connected yet.</div>'}
+<section class="card"><form method="post" action="/coach/dm" class="stack">
+<input name="handle" placeholder="Their @handle (optional)" value="${esc(form.handle || '')}">
+<textarea name="message" rows="6" placeholder="Paste their DM here" required>${esc(form.message || '')}</textarea>
+<input name="context" placeholder="Anything you know about them (optional): e.g. already sells on Whatnot, past student" value="${esc(form.context || '')}">
+<button class="btn">Draft my reply</button></form></section>
+${result ? `<section class="card"><div class="row"><h2>${esc(LEAD_TAG[result.lead] || result.lead || 'Reply')}</h2><button class="btn small ghost right" type="button" data-copy-text="dmReply">Copy all</button></div>
+${result.why ? `<p class="muted small">${esc(result.why)}</p>` : ''}
+${(result.bubbles || []).map((b, i) => `<div class="copyrow"><input readonly value="${esc(b)}" id="dmb${i}"><button class="btn small" type="button" data-copy="dmb${i}">Copy</button></div>`).join('')}
+<textarea id="dmReply" hidden>${esc((result.bubbles || []).join('\n'))}</textarea>
+${result.next ? `<p class="small"><strong>Next:</strong> ${esc(result.next)}</p>` : ''}</section>` : ''}
+<section class="card"><h2>Last 30 days</h2><p>${counts.map((c) => `<span class="tag">${esc(LEAD_TAG[c.lead] || c.lead)} · ${c.n}</span>`).join(' ') || '<span class="muted">No DMs drafted yet.</span>'}</p>
+<ul class="list">${recent.map((d) => `<li><span class="tag">${esc(LEAD_TAG[d.lead] || d.lead || '')}</span> <strong>${esc(d.handle || 'unknown')}</strong> <span class="muted small">${ago(d.created_at)}</span><br><span class="small muted">${esc(String(d.message || '').slice(0, 140))}</span></li>`).join('')}</ul></section>`);
+  }
+  r.get('/dm', wrap(async (req, res) => dmPage(req, res, null)));
+  r.post('/dm', wrap(async (req, res) => {
+    const form = { handle: clip(req.body.handle, 80), message: clip(req.body.message, 6000), context: clip(req.body.context, 500) };
+    if (!form.message) return res.redirect('/coach/dm');
+    let result;
+    try { result = await ai.draftDM({ message: form.message, context: form.context }); }
+    catch (e) { result = { lead: '', why: 'Could not draft: ' + e.message, bubbles: [] }; }
+    if (result.bubbles?.length) await q('INSERT INTO dm_drafts (handle,message,lead,reply) VALUES ($1,$2,$3,$4)', [form.handle || null, form.message, clip(result.lead, 20), clip(result.bubbles.join('\n'), 3000)]);
+    return dmPage(req, res, result, { ...form, message: '' , context: '' });
+  }));
+
   return r;
 };
