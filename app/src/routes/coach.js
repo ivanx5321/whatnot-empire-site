@@ -3,7 +3,7 @@ const express = require('express');
 const { one, all, q } = require('../db');
 const ai = require('../ai');
 const { PHASES, ALL_ITEMS } = require('../roadmap');
-const { esc, money, date, iso, md, sparkline, bar, ago } = require('../views');
+const { esc, money, date, iso, md, sparkline, bar, ago, smsInvite } = require('../views');
 
 const num = (v) => (v === '' || v === undefined || v === null || Number.isNaN(Number(v)) ? null : Number(v));
 const clip = (v, n = 4000) => String(v ?? '').trim().slice(0, n);
@@ -189,7 +189,7 @@ ${row.risk.length ? `<p>${riskTags(row.risk)}</p>` : ''}
 
 <section class="card"><h2>Login</h2>
 ${login ? `<p>Logged in as <strong>${esc(login.email)}</strong>.</p>` : '<p>Hasn\'t set up their login yet.</p>'}
-${s.invite_token ? `<p class="small">Text them this link:</p><div class="copyrow"><input readonly value="${esc(inviteUrl(req, s.invite_token))}" id="inv"><button class="btn small" data-copy="inv" type="button">Copy</button></div>` : ''}
+${s.invite_token ? `<p class="small">Text them this link:</p><div class="copyrow"><input readonly value="${esc(inviteUrl(req, s.invite_token))}" id="inv"><button class="btn small" data-copy="inv" type="button">Copy</button>${smsInvite(inviteUrl(req, s.invite_token), s)}</div>` : ''}
 <form method="post" action="/coach/students/${s.id}/invite" class="inline"><button class="btn small ghost">${s.user_id ? 'Make a password-reset link' : 'Make a new link'}</button></form>
 </section>
 

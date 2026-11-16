@@ -1,0 +1,5 @@
+# Keep secrets and local junk out of this public repo
+.env
+.env.*
+node_modules/
+.DS_Store
