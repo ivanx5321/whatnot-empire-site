@@ -61,8 +61,9 @@ Locally, put these in `app/.env` (gitignored — add `.env` to `app/.gitignore` 
 
 ```bash
 cd app && npm install          # install deps
+npm test                       # smoke test, no DB needed
 npm start                      # run on :3000 (needs a local Postgres)
 curl localhost:3000/healthz    # should print ok
 ```
 
-Note: `npm test` points to `test/smoke.js`, which doesn't exist yet.
+`npm test` runs `app/test/smoke.js` (syntax + roadmap + escaping checks, no database needed).

@@ -1,4 +1,4 @@
-// The 90-day roadmap every student follows. Keys are stored in the progress table,
+// The roadmap every student follows. Keys are stored in the progress table,
 // so titles can be reworded without losing anyone's progress. Add new items freely.
 const PHASES = [
   {
@@ -6,7 +6,7 @@ const PHASES = [
     title: 'Week 0 · Onboarding',
     days: [0, 7],
     items: [
-      ['ob_goal', 'Set your 90-day goal with Levi'],
+      ['ob_goal', 'Set your goal with Levi'],
       ['ob_whatnot', 'Whatnot seller account approved'],
       ['ob_tiktok', 'TikTok Shop + Live auction access requested'],
       ['ob_shipping', 'Shipping set up: label printer, scale, mailers, custom shipping profile'],
