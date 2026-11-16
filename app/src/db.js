@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS students (
   tiktok_handle TEXT,
   whatnot_handle TEXT,
   platforms TEXT DEFAULT 'Whatnot + TikTok',
-  program TEXT DEFAULT '90-Day 1-on-1',
+  program TEXT DEFAULT '5-Month 1-on-1',
   price NUMERIC(10,2) DEFAULT 0,
   start_date DATE DEFAULT CURRENT_DATE,
   end_date DATE,

@@ -36,12 +36,14 @@ module.exports = (wrap) => {
     const total = checkins.reduce((a, c) => a + Number(c.sales || 0), 0);
     const dueCheckin = !last || (Date.now() - new Date(last.created_at).getTime()) > 6 * 86400000;
     const series = [...checkins].reverse().map((c) => c.sales);
+    const callsUsed = (await one("SELECT count(*)::int n FROM calls WHERE student_id=$1 AND kind='coaching'", [s.id])).n;
 
     res.page('Home', `
 <h1>Hey ${esc(s.name.split(' ')[0])} 👋</h1>
 <p class="muted">Day ${day} of your program${s.goal ? ` · Goal: <strong>${esc(s.goal)}</strong>` : ''}</p>
 ${dueCheckin ? `<a class="card cta" href="/checkin"><strong>Your weekly check-in is due →</strong><span class="muted small">Takes 2 minutes. Levi reads every one.</span></a>` : ''}
-<div class="grid3">
+<div class="grid4">
+  <div class="card stat"><span class="muted small">Private calls with Levi</span><strong>${callsUsed} of 10</strong><span class="muted small">${s.end_date ? `Program ends ${date(s.end_date)}` : ''}</span></div>
   <div class="card stat"><span class="muted small">Roadmap</span><strong>${Math.round(pct)}%</strong>${bar(pct)}</div>
   <div class="card stat"><span class="muted small">Sales logged (last 12 wks)</span><strong>${money(total)}</strong></div>
   <div class="card stat"><span class="muted small">Last check-in</span><strong>${last ? ago(last.created_at) : 'none yet'}</strong></div>
