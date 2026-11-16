@@ -53,6 +53,16 @@ const PRIVATE_CALLS = 10; // up to 10 private 1-on-1 calls per $7,500 / 5-month 
 
 const riskTags = (flags) => flags.map((f) => `<span class="tag ${/ends in/.test(f) ? '' : 'risk'}">${esc(f)}</span>`).join(' ');
 
+// "Text invite" button: opens Messages with the student's number and the invite already typed in.
+// Levi reviews and sends it from his own phone. Hidden when there's no phone number.
+function smsInvite(req, s) {
+  const phone = String(s.phone || '').replace(/[^\d+]/g, '');
+  if (!phone || !s.invite_token) return '';
+  const first = String(s.name || '').trim().split(/\s+/)[0] || 'there';
+  const body = `Hey ${first}, it's Levi. Here's your link to set up your coaching portal: ${inviteUrl(req, s.invite_token)}`;
+  return ` <a class="btn small" href="${esc(`sms:${phone}?&body=${encodeURIComponent(body)}`)}">Text invite</a>`;
+}
+
 function inviteUrl(req, token) {
   return `${req.protocol}://${req.get('host')}/join/${token}`;
 }
@@ -189,7 +199,7 @@ ${row.risk.length ? `<p>${riskTags(row.risk)}</p>` : ''}
 
 <section class="card"><h2>Login</h2>
 ${login ? `<p>Logged in as <strong>${esc(login.email)}</strong>.</p>` : '<p>Hasn\'t set up their login yet.</p>'}
-${s.invite_token ? `<p class="small">Text them this link:</p><div class="copyrow"><input readonly value="${esc(inviteUrl(req, s.invite_token))}" id="inv"><button class="btn small" data-copy="inv" type="button">Copy</button></div>` : ''}
+${s.invite_token ? `<p class="small">Text them this link:</p><div class="copyrow"><input readonly value="${esc(inviteUrl(req, s.invite_token))}" id="inv"><button class="btn small" data-copy="inv" type="button">Copy</button>${smsInvite(req, s)}</div>` : ''}
 <form method="post" action="/coach/students/${s.id}/invite" class="inline"><button class="btn small ghost">${s.user_id ? 'Make a password-reset link' : 'Make a new link'}</button></form>
 </section>
 
