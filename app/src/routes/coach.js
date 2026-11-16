@@ -126,11 +126,11 @@ ${wins.map((w) => `<div class="row-item"><strong>${esc(w.name)}</strong>: ${esc(
     <label>Instagram<input name="ig_handle" placeholder="@"></label>
     <label>TikTok<input name="tiktok_handle" placeholder="@"></label>
     <label>Whatnot<input name="whatnot_handle" placeholder="@"></label>
-    <label>Program<input name="program" value="90-Day 1-on-1"></label>
-    <label>Price for this student ($)<input type="number" name="price" min="0" step="0.01" value="5000"></label>
+    <label>Program<input name="program" value="5-Month 1-on-1"></label>
+    <label>Price for this student ($)<input type="number" name="price" min="0" step="0.01" value="7500"></label>
     <label>Paid so far ($)<input type="number" name="paid" min="0" step="0.01"></label>
     <label>Start date<input type="date" name="start_date" value="${iso(new Date())}"></label>
-    <label>Length<select name="days"><option value="90">3 months</option><option value="120">4 months</option><option value="150">5 months</option><option value="180">6 months</option><option value="365">12 months</option></select></label>
+    <label>Length<select name="days"><option value="90">3 months</option><option value="120">4 months</option><option value="150" selected>5 months</option><option value="180">6 months</option><option value="365">12 months</option></select></label>
     <label>Platforms<select name="platforms"><option>Whatnot + TikTok</option><option>Whatnot</option><option>TikTok</option></select></label>
   </div>
   <label>Their goal<input name="goal" placeholder="$10K/month on Whatnot by March"></label>

@@ -69,7 +69,7 @@ ${ann.length ? `<section class="card"><h2>From Levi</h2>${ann.map((a) => `<artic
     const progress = new Set((await all('SELECT item_key FROM progress WHERE student_id=$1', [req.student.id])).map((x) => x.item_key));
     const day = dayOfProgram(req.student);
     res.page('Roadmap', `
-<h1>Your 90-day roadmap</h1>
+<h1>Your roadmap</h1>
 <p class="muted">Day ${day}. Tick things off as you hit them — Levi sees your progress.</p>
 ${PHASES.map((p) => {
       const done = p.items.filter(([k]) => progress.has(k)).length;
