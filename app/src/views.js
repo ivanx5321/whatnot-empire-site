@@ -87,4 +87,14 @@ ${body}
 </body></html>`;
 }
 
-module.exports = { esc, money, date, iso, ago, md, sparkline, bar, layout };
+// "Text invite" button for a student: opens Messages with their number and invite link prefilled.
+// Levi reviews and sends it from his own phone. Returns '' when there's no phone or no link.
+const smsInvite = (url, s) => {
+  const phone = String((s && s.phone) || '').replace(/[^\d+]/g, '');
+  if (!phone || !url) return '';
+  const first = String(s.name || '').trim().split(/\s+/)[0] || 'there';
+  const body = `Hey ${first}, it's Levi. Here's your link to set up your coaching portal: ${url}`;
+  return ` <a class="btn small" href="${esc(`sms:${phone}?&body=${encodeURIComponent(body)}`)}">Text invite</a>`;
+};
+
+module.exports = { esc, money, date, iso, ago, md, sparkline, bar, layout, smsInvite };
