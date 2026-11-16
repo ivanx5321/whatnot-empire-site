@@ -19,6 +19,7 @@ async function studentRows(where = "s.status <> 'archived'") {
       (SELECT coalesce(sum(sales),0) FROM checkins c WHERE c.student_id=s.id) AS sales_all,
       (SELECT coalesce(sum(amount),0) FROM payments p WHERE p.student_id=s.id) AS paid,
       (SELECT count(*) FROM progress p WHERE p.student_id=s.id)::int AS done_items,
+      (SELECT count(*) FROM calls k WHERE k.student_id=s.id AND k.kind='coaching')::int AS private_calls,
       (SELECT json_agg(x ORDER BY x.week_of DESC) FROM (SELECT week_of, sales, shows, mood FROM checkins c WHERE c.student_id=s.id ORDER BY week_of DESC LIMIT 3) x) AS recent
     FROM students s WHERE ${where} ORDER BY s.name`);
   return rows.map((s) => ({ ...s, risk: riskOf(s) }));
@@ -38,12 +39,17 @@ function riskOf(s) {
   if (r[0] && r[0].mood && Number(r[0].mood) <= 2) flags.push('Low mood');
   const expected = Math.min(ALL_ITEMS.length, Math.floor((started / 90) * ALL_ITEMS.length));
   if (started > 21 && s.done_items < expected * 0.5) flags.push('Behind on roadmap');
+  const used = Number(s.private_calls || 0);
+  if (used >= PRIVATE_CALLS) flags.push(`All ${PRIVATE_CALLS} private calls used`);
+  else if (started > 30 && used === 0) flags.push('No private call yet');
   if (s.end_date) {
     const left = (new Date(s.end_date).getTime() - Date.now()) / 86400000;
     if (left >= 0 && left <= 14) flags.push(`Program ends in ${Math.ceil(left)} days`);
   }
   return flags;
 }
+
+const PRIVATE_CALLS = 10; // up to 10 private 1-on-1 calls per $7,500 / 5-month program
 
 const riskTags = (flags) => flags.map((f) => `<span class="tag ${/ends in/.test(f) ? '' : 'risk'}">${esc(f)}</span>`).join(' ');
 
@@ -141,7 +147,7 @@ ${wins.map((w) => `<div class="row-item"><strong>${esc(w.name)}</strong>: ${esc(
 
   r.post('/students', wrap(async (req, res) => {
     const b = req.body;
-    const days = num(b.days) || 90;
+    const days = num(b.days) || 150;
     const start = b.start_date || iso(new Date());
     const end = new Date(new Date(start).getTime() + days * 86400000);
     const s = await one(`INSERT INTO students (name,email,phone,ig_handle,tiktok_handle,whatnot_handle,program,price,start_date,end_date,platforms,goal,starting_point,invite_token)
@@ -178,6 +184,7 @@ ${row.risk.length ? `<p>${riskTags(row.risk)}</p>` : ''}
   <div class="card stat"><span class="muted small">Sales logged</span><strong>${money(row.sales_all)}</strong></div>
   <div class="card stat"><span class="muted small">Paid</span><strong>${money(paid)}</strong><span class="muted small">of ${money(s.price)}</span></div>
   <div class="card stat"><span class="muted small">Program</span><strong>${date(s.start_date)}</strong><span class="muted small">to ${date(s.end_date)}</span></div>
+  <div class="card stat"><span class="muted small">Private calls</span><strong>${Number(row.private_calls || 0)}/${PRIVATE_CALLS}</strong><span class="muted small">${Math.max(0, PRIVATE_CALLS - Number(row.private_calls || 0))} left</span></div>
 </div>
 
 <section class="card"><h2>Login</h2>
