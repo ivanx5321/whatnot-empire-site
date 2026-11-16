@@ -8,6 +8,10 @@ This repo has two parts:
 
 Students and leads are real clients. Improve the existing platform. Do not rebuild it.
 
+- GitHub: `ivanx5321/whatnot-empire-site` (public repo)
+- Domain: livesellingcoach.com (registered at Namecheap)
+- Hosting: Render. The static site publishes `public/` (also at whatnot-empire-site.onrender.com). `app/` is a separate Render Node web service with Render Postgres.
+
 ## Architecture
 - `public/`: plain HTML/CSS with no build step. Hosted on Render as a static site (publish dir `public`).
 - `app/`: Node ≥20, Express 4, server-rendered HTML (`src/views.js`), Postgres via `pg`, sessions in Postgres (`connect-pg-simple`), bcrypt passwords.
@@ -17,6 +21,8 @@ Students and leads are real clients. Improve the existing platform. Do not rebui
   - `src/routes/student.js`: student dashboard.
   - `src/ai.js` + `src/persona.js`: AI coach (Anthropic API, model from `AI_MODEL`).
   - `src/roadmap.js`: program roadmap content.
+- Auth: roles `coach` and `student`. The first coach is created at `/setup` with `SETUP_CODE`. Students join through `/join/:token` invite links. Health check: `GET /healthz`.
+- Keep the existing security in place: CSRF origin check, secure cookies in prod, X-Frame-Options/nosniff headers, `esc()` escaping.
 
 ## Data (Postgres tables)
 users, students, payments, progress, checkins, calls, action_items, knowledge, chats, show_reviews, wins,
@@ -57,8 +63,23 @@ Static site: open `public/index.html` directly or run `npx serve public`.
 6. Render deploys from `main`, so a merge is a production deploy and needs Levi's approval.
 
 ## Integrations
-Calendly (onboarding call + paid 30-min call links), Anthropic API (AI coach), Render (static site + web service + Postgres).
-Payments come in through Zelle, PayPal, Whop, card, or cash, and are **logged manually** in the coach admin today.
+- Calendly: `levisalas-eastcoastseller/whatnot-coaching-onboarding-call` and `/30-min-call`. Keep all links working.
+- Anthropic API: AI coach, call analysis, knowledge extraction, course drafts.
+- Discord: community Q&A ingested into the knowledge brain via `/coach/ingest`.
+- ManyChat, Instagram (@youngceolevi), YouTube, ViewNot (viewnot.com, which Levi part-owns; keep it featured).
+- Render: static site + web service + Postgres.
+- Payments come in through Zelle, PayPal, Whop, card, or cash, and are **logged manually** in the coach admin today.
+
+## Copy rules (marketing + AI coach)
+- Coaching covers TikTok Live AND Whatnot, not Whatnot only. High-ticket only, with no low-ticket offer.
+- Never promise a fixed timeline like "90 days". No raids from his shows.
+- Approved proof points: 50+ sellers coached; $3M in TikTok Live sales in his first 5 months.
+
+## Before finishing any change
+- Run `node --check` on every edited JS file.
+- Start the app locally and confirm `curl localhost:3000/healthz` prints ok.
+- Local secrets go in `app/.env`. Add `.env` to `app/.gitignore` before creating one.
+- No destructive SQL (DROP, TRUNCATE, or DELETE without WHERE). Don't add dependencies unless they're needed. Keep the no-build, server-rendered approach.
 
 ## Known limitations
 - No automated tests (`npm test` points at a missing file) and no CI.
